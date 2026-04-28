@@ -4,21 +4,18 @@ import socket
 import urllib.error
 import urllib.request
 
-from config import SUPABASE_KEY, SUPABASE_URL
+from config import POCKETBASE_TOKEN, POCKETBASE_URL
 
 
-class SupabaseClient:
-    """Inserts rows into the Supabase events table via the REST API."""
+class PocketBaseClient:
+    """Inserts rows into a PocketBase collection via the REST API."""
 
-    def __init__(self) -> None:
-        self._endpoint = f"{SUPABASE_URL.rstrip('/')}/rest/v1/events"
+    def __init__(self, collection: str = "events") -> None:
+        self._endpoint = f"{POCKETBASE_URL.rstrip('/')}/api/collections/{collection}/records"
         self._source = socket.gethostname()
-        self._headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        }
+        self._headers = {"Content-Type": "application/json"}
+        if POCKETBASE_TOKEN:
+            self._headers["Authorization"] = POCKETBASE_TOKEN
 
     def push_event(self, event_type: str, payload: dict) -> None:
         body = json.dumps({"name": event_type, "source": self._source, "payload": payload}).encode()
@@ -30,6 +27,6 @@ class SupabaseClient:
                 pass
             logging.info("pushed %s", event_type)
         except urllib.error.HTTPError as e:
-            logging.warning("supabase %s error: %s", e.code, e.read(200))
+            logging.warning("pocketbase %s error: %s", e.code, e.read(200))
         except Exception as e:
-            logging.warning("supabase push failed: %s", e)
+            logging.warning("pocketbase push failed: %s", e)

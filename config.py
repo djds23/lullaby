@@ -14,6 +14,6 @@ def load_env(path: str = "/home/deanrex/.env") -> None:
 
 load_env()
 
-SUPABASE_URL  = os.environ["SUPABASE_URL"]
-SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "300"))
+POCKETBASE_URL   = os.environ["POCKETBASE_URL"]
+POCKETBASE_TOKEN = os.environ.get("POCKETBASE_TOKEN", "")
+POLL_INTERVAL    = int(os.environ.get("POLL_INTERVAL", "300"))
