@@ -14,6 +14,6 @@ def load_env(path: str = "/home/deanrex/.env") -> None:
 
 load_env()
 
-POCKETBASE_URL   = os.environ.get("POCKETBASE_URL", "http://tenor.local:8090")
+POCKETBASE_URL   = os.environ["POCKETBASE_URL"]
 POCKETBASE_TOKEN = os.environ.get("POCKETBASE_TOKEN", "")
 POLL_INTERVAL    = int(os.environ.get("POLL_INTERVAL", "300"))
