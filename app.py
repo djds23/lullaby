@@ -4,12 +4,15 @@ app.py
 Daemon that streams Pi health events to Supabase.
 """
 
-import dataclasses
+import hashlib
+import json
 import logging
 import re
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from config import POLL_INTERVAL
 from monitors import BluetoothMonitor, RaspotifyMonitor, SystemMonitor, run
@@ -92,6 +95,7 @@ class StatsPoller:
         self._interval = interval
         self._sys_mon = SystemMonitor()
         self._rsp_mon = RaspotifyMonitor()
+        self._last_hash: Optional[str] = None
 
     def run(self) -> None:
         while True:
@@ -101,9 +105,69 @@ class StatsPoller:
                 logging.error("stats poll failed: %s", e)
             time.sleep(self._interval)
 
+    @staticmethod
+    def _online_since(uptime_seconds: int) -> str:
+        ts = datetime.now(timezone.utc) - timedelta(seconds=uptime_seconds)
+        return ts.replace(second=0, microsecond=0).isoformat()
+
     def _poll(self) -> None:
-        self._client.push_event("system_snapshot", dataclasses.asdict(self._sys_mon.get_stats()))
-        self._client.push_event("raspotify_snapshot", dataclasses.asdict(self._rsp_mon.get_stats()))
+        sys_stats = self._sys_mon.get_stats()
+        rsp_stats = self._rsp_mon.get_stats()
+        svc = rsp_stats.service
+
+        system_online_since = self._online_since(sys_stats.uptime_seconds)
+        raspotify_online_since = (
+            self._online_since(svc.uptime_seconds)
+            if svc.active and svc.uptime_seconds is not None
+            else None
+        )
+
+        # Hash only stable state fields — noisy metrics (cpu, temp, memory)
+        # don't trigger a push on their own but ride along when state changes.
+        state_signature = {
+            "system_online_since":          system_online_since,
+            "system_throttled":             sys_stats.throttled,
+            "raspotify_online_since":       raspotify_online_since,
+            "raspotify_active":             svc.active,
+            "raspotify_state":              svc.state,
+            "raspotify_restart_count":      svc.restart_count,
+            "raspotify_sink_state":         rsp_stats.sink_state,
+            "raspotify_currently_playing":  rsp_stats.currently_playing,
+            "raspotify_last_error":         rsp_stats.last_error,
+            "raspotify_spotify_reachable":  rsp_stats.spotify_reachable,
+            "raspotify_internet_reachable": rsp_stats.internet_reachable,
+        }
+
+        digest = hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()
+        if digest == self._last_hash:
+            logging.debug("status unchanged, skipping push")
+            return
+
+        payload = {
+            "system": {
+                "online_since":        system_online_since,
+                "cpu_percent":         sys_stats.cpu_percent,
+                "memory_available_mb": sys_stats.memory_available_mb,
+                "disk_available_gb":   sys_stats.disk_available_gb,
+                "cpu_temp_celsius":    sys_stats.cpu_temp_celsius,
+                "throttled":           sys_stats.throttled,
+            },
+            "raspotify": {
+                "online_since":       raspotify_online_since,
+                "active":             svc.active,
+                "state":              svc.state,
+                "restart_count":      svc.restart_count,
+                "last_exit_code":     svc.last_exit_code,
+                "sink_state":         rsp_stats.sink_state,
+                "currently_playing":  rsp_stats.currently_playing,
+                "last_error":         rsp_stats.last_error,
+                "spotify_reachable":  rsp_stats.spotify_reachable,
+                "internet_reachable": rsp_stats.internet_reachable,
+            },
+        }
+
+        self._client.push_event("status_snapshot", payload)
+        self._last_hash = digest
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
