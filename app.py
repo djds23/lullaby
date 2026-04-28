@@ -112,9 +112,7 @@ class StatsPoller:
         # Hash only stable state fields — noisy metrics (cpu, temp, memory)
         # don't trigger a push on their own but ride along when state changes.
         state_signature = {
-            "system_uptime_seconds":        sys_stats.uptime_seconds,
             "system_throttled":             sys_stats.throttled,
-            "raspotify_uptime_seconds":     svc.uptime_seconds,
             "raspotify_active":             svc.active,
             "raspotify_state":              svc.state,
             "raspotify_restart_count":      svc.restart_count,
