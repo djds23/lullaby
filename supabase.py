@@ -19,7 +19,7 @@ class SupabaseClient:
         }
 
     def push_event(self, event_type: str, payload: dict) -> None:
-        body = json.dumps({"event_type": event_type, "payload": payload}).encode()
+        body = json.dumps({"name": event_type, "payload": payload}).encode()
         req = urllib.request.Request(
             self._endpoint, data=body, headers=self._headers, method="POST"
         )
