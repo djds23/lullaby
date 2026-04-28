@@ -1,5 +1,6 @@
 import json
 import logging
+import socket
 import urllib.error
 import urllib.request
 
@@ -11,6 +12,7 @@ class SupabaseClient:
 
     def __init__(self) -> None:
         self._endpoint = f"{SUPABASE_URL.rstrip('/')}/rest/v1/events"
+        self._source = socket.gethostname()
         self._headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -19,7 +21,7 @@ class SupabaseClient:
         }
 
     def push_event(self, event_type: str, payload: dict) -> None:
-        body = json.dumps({"name": event_type, "payload": payload}).encode()
+        body = json.dumps({"name": event_type, "source": self._source, "payload": payload}).encode()
         req = urllib.request.Request(
             self._endpoint, data=body, headers=self._headers, method="POST"
         )

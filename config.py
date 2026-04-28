@@ -16,4 +16,4 @@ load_env()
 
 SUPABASE_URL  = os.environ["SUPABASE_URL"]
 SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "300"))
