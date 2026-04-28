@@ -11,7 +11,6 @@ import re
 import subprocess
 import threading
 import time
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from config import POLL_INTERVAL
@@ -105,29 +104,17 @@ class StatsPoller:
                 logging.error("stats poll failed: %s", e)
             time.sleep(self._interval)
 
-    @staticmethod
-    def _online_since(uptime_seconds: int) -> str:
-        ts = datetime.now(timezone.utc) - timedelta(seconds=uptime_seconds)
-        return ts.replace(second=0, microsecond=0).isoformat()
-
     def _poll(self) -> None:
         sys_stats = self._sys_mon.get_stats()
         rsp_stats = self._rsp_mon.get_stats()
         svc = rsp_stats.service
 
-        system_online_since = self._online_since(sys_stats.uptime_seconds)
-        raspotify_online_since = (
-            self._online_since(svc.uptime_seconds)
-            if svc.active and svc.uptime_seconds is not None
-            else None
-        )
-
         # Hash only stable state fields — noisy metrics (cpu, temp, memory)
         # don't trigger a push on their own but ride along when state changes.
         state_signature = {
-            "system_online_since":          system_online_since,
+            "system_uptime_seconds":        sys_stats.uptime_seconds,
             "system_throttled":             sys_stats.throttled,
-            "raspotify_online_since":       raspotify_online_since,
+            "raspotify_uptime_seconds":     svc.uptime_seconds,
             "raspotify_active":             svc.active,
             "raspotify_state":              svc.state,
             "raspotify_restart_count":      svc.restart_count,
@@ -145,7 +132,7 @@ class StatsPoller:
 
         payload = {
             "system": {
-                "online_since":        system_online_since,
+                "uptime_seconds":      sys_stats.uptime_seconds,
                 "cpu_percent":         sys_stats.cpu_percent,
                 "memory_available_mb": sys_stats.memory_available_mb,
                 "disk_available_gb":   sys_stats.disk_available_gb,
@@ -153,7 +140,7 @@ class StatsPoller:
                 "throttled":           sys_stats.throttled,
             },
             "raspotify": {
-                "online_since":       raspotify_online_since,
+                "uptime_seconds":     svc.uptime_seconds,
                 "active":             svc.active,
                 "state":              svc.state,
                 "restart_count":      svc.restart_count,
