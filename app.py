@@ -108,12 +108,10 @@ class StatsPoller:
         rsp_stats = self._rsp_mon.get_stats()
 
         state_signature = {
-            "sink_state":         rsp_stats.sink_state,
-            "currently_playing":  rsp_stats.currently_playing,
-            "last_error":         rsp_stats.last_error,
-            "last_exit_code":     rsp_stats.service.last_exit_code,
-            "spotify_reachable":  rsp_stats.spotify_reachable,
-            "internet_reachable": rsp_stats.internet_reachable,
+            "sink_state":        rsp_stats.sink_state,
+            "currently_playing": rsp_stats.currently_playing,
+            "last_error":        rsp_stats.last_error,
+            "last_exit_code":    rsp_stats.service.last_exit_code,
         }
 
         digest = hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()
