@@ -4,18 +4,21 @@ import socket
 import urllib.error
 import urllib.request
 
-from config import POCKETBASE_TOKEN, POCKETBASE_URL
+from config import POSTGREST_TOKEN, POSTGREST_URL
 
 
-class PocketBaseClient:
-    """Inserts rows into a PocketBase collection via the REST API."""
+class PostgRESTClient:
+    """Inserts rows into a PostgREST-backed table via the REST API."""
 
-    def __init__(self, collection: str = "events") -> None:
-        self._endpoint = f"{POCKETBASE_URL.rstrip('/')}/api/collections/{collection}/records"
+    def __init__(self, table: str = "events") -> None:
+        self._endpoint = f"{POSTGREST_URL.rstrip('/')}/{table}"
         self._source = socket.gethostname()
-        self._headers = {"Content-Type": "application/json"}
-        if POCKETBASE_TOKEN:
-            self._headers["Authorization"] = POCKETBASE_TOKEN
+        self._headers = {
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        if POSTGREST_TOKEN:
+            self._headers["Authorization"] = f"Bearer {POSTGREST_TOKEN}"
 
     def push_event(self, event_type: str, payload: dict) -> None:
         body = json.dumps({"name": event_type, "source": self._source, "payload": payload}).encode()
@@ -27,6 +30,6 @@ class PocketBaseClient:
                 pass
             logging.info("pushed %s", event_type)
         except urllib.error.HTTPError as e:
-            logging.warning("pocketbase %s error: %s", e.code, e.read(200))
+            logging.warning("postgrest %s error: %s", e.code, e.read(200))
         except Exception as e:
-            logging.warning("pocketbase push failed: %s", e)
+            logging.warning("postgrest push failed: %s", e)
