@@ -36,7 +36,4 @@ class ServiceStats:
 class RaspotifyStats:
     service: ServiceStats
     sink_state: str                 # RUNNING / SUSPENDED / unknown
-    currently_playing: Optional[str]
     last_error: Optional[str]
-    spotify_reachable: bool
-    internet_reachable: bool
