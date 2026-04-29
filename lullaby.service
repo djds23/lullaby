@@ -1,0 +1,15 @@
+[Unit]
+Description=Lullaby Pi health monitor
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deanrex
+WorkingDirectory=/home/deanrex/Apps/lullaby
+ExecStart=/usr/bin/python3 app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
