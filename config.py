@@ -14,6 +14,6 @@ def load_env(path: str = "/home/deanrex/.env") -> None:
 
 load_env()
 
-POCKETBASE_URL   = os.environ["POCKETBASE_URL"]
-POCKETBASE_TOKEN = os.environ.get("POCKETBASE_TOKEN", "")
+POSTGREST_URL   = os.environ["POSTGREST_URL"]
+POSTGREST_TOKEN = os.environ.get("POSTGREST_TOKEN", "")
 POLL_INTERVAL    = int(os.environ.get("POLL_INTERVAL", "300"))

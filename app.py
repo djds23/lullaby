@@ -15,7 +15,7 @@ from typing import Optional
 
 from config import POLL_INTERVAL
 from monitors import BluetoothMonitor, RaspotifyMonitor, SystemMonitor, run
-from pocketbase import PocketBaseClient
+from postgrest import PostgRESTClient
 
 
 # ─── Bluetooth event watcher ──────────────────────────────────────────────────
@@ -29,7 +29,7 @@ class BluetoothEventWatcher:
     _CONNECTED_RE = re.compile(r"\[CHG\] Device ([0-9A-Fa-f:]{17}) Connected: (yes|no)")
     _BATTERY_RE   = re.compile(r"\[CHG\] Device ([0-9A-Fa-f:]{17}) Battery Percentage: 0x[0-9a-f]+ \((\d+)\)")
 
-    def __init__(self, client: PocketBaseClient) -> None:
+    def __init__(self, client: PostgRESTClient) -> None:
         self._client = client
         self._name_cache: dict[str, str] = {}
 
@@ -89,7 +89,7 @@ class BluetoothEventWatcher:
 class StatsPoller:
     """Collects system and raspotify stats on an interval and pushes them as events."""
 
-    def __init__(self, client: PocketBaseClient, interval: int = POLL_INTERVAL) -> None:
+    def __init__(self, client: PostgRESTClient, interval: int = POLL_INTERVAL) -> None:
         self._client = client
         self._interval = interval
         self._sys_mon = SystemMonitor()
@@ -160,7 +160,7 @@ class StatsPoller:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    client = PocketBaseClient()
+    client = PostgRESTClient()
 
     bt_thread = threading.Thread(
         target=BluetoothEventWatcher(client).run, daemon=True, name="bt-watcher"
