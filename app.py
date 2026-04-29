@@ -4,84 +4,106 @@ app.py
 Daemon that streams Pi health events to Supabase.
 """
 
+import dbus
+import dbus.mainloop.glib
 import hashlib
 import json
 import logging
-import re
-import subprocess
 import threading
 import time
+from gi.repository import GLib
 from typing import Optional
 
 from config import POLL_INTERVAL
-from monitors import BluetoothMonitor, RaspotifyMonitor, run
+from monitors import RaspotifyMonitor
 from postgrest import PostgRESTClient
 
 
 # ─── Bluetooth event watcher ──────────────────────────────────────────────────
 
+BLUEZ_SERVICE        = "org.bluez"
+BLUEZ_DEVICE_IFACE   = "org.bluez.Device1"
+BLUEZ_BATTERY_IFACE  = "org.bluez.Battery1"
+DBUS_PROPS_IFACE     = "org.freedesktop.DBus.Properties"
+DBUS_OBJMANAGER_IFACE = "org.freedesktop.DBus.ObjectManager"
+
+# Audio UUID presence indicates this is an audio device
+AUDIO_UUIDS = {
+    "0000110b-0000-1000-8000-00805f9b34fb",  # Audio Sink
+    "0000110a-0000-1000-8000-00805f9b34fb",  # Audio Source
+    "00001108-0000-1000-8000-00805f9b34fb",  # Headset
+    "0000111e-0000-1000-8000-00805f9b34fb",  # Handsfree
+    "0000110e-0000-1000-8000-00805f9b34fb",  # A/V Remote Control
+}
+
+
 class BluetoothEventWatcher:
     """
-    Streams bluetoothctl in monitor mode and pushes connect/disconnect/battery
-    events to Supabase in real time.
+    Subscribes to BlueZ D-Bus PropertiesChanged signals and pushes
+    connect/disconnect/battery events in real time.
+    Runs a GLib main loop on a dedicated daemon thread.
     """
-
-    _CONNECTED_RE = re.compile(r"\[CHG\] Device ([0-9A-Fa-f:]{17}) Connected: (yes|no)")
-    _BATTERY_RE   = re.compile(r"\[CHG\] Device ([0-9A-Fa-f:]{17}) Battery Percentage: 0x[0-9a-f]+ \((\d+)\)")
 
     def __init__(self, client: PostgRESTClient) -> None:
         self._client = client
-        self._name_cache: dict[str, str] = {}
 
-    def _resolve_name(self, mac: str) -> str:
-        if mac in self._name_cache:
-            return self._name_cache[mac]
-        out, code = run(f"bluetoothctl info {mac}")
-        if code == 0:
-            for line in out.splitlines():
-                if "Name:" in line:
-                    name = line.split(":", 1)[1].strip()
-                    self._name_cache[mac] = name
-                    return name
-        return mac
+    def _is_audio_device(self, bus: dbus.SystemBus, path: str) -> bool:
+        try:
+            props = dbus.Interface(bus.get_object(BLUEZ_SERVICE, path), DBUS_PROPS_IFACE)
+            uuids = props.Get(BLUEZ_DEVICE_IFACE, "UUIDs")
+            return bool(AUDIO_UUIDS & {str(u).lower() for u in uuids})
+        except Exception:
+            return False
+
+    def _get_name(self, bus: dbus.SystemBus, path: str) -> str:
+        try:
+            props = dbus.Interface(bus.get_object(BLUEZ_SERVICE, path), DBUS_PROPS_IFACE)
+            return str(props.Get(BLUEZ_DEVICE_IFACE, "Name"))
+        except Exception:
+            return path.split("/")[-1]
+
+    def _on_properties_changed(self, interface, changed, invalidated, path, bus):
+        if interface == BLUEZ_DEVICE_IFACE:
+            if "Connected" in changed:
+                if not self._is_audio_device(bus, path):
+                    return
+                name = self._get_name(bus, path)
+                mac  = name_from_path(path)
+                if bool(changed["Connected"]):
+                    self._client.push_event("bluetooth_connected", {"mac": mac, "name": name})
+                    logging.info("BT connected: %s (%s)", name, mac)
+                else:
+                    self._client.push_event("bluetooth_disconnected", {"mac": mac, "name": name})
+                    logging.info("BT disconnected: %s (%s)", name, mac)
+
+        elif interface == BLUEZ_BATTERY_IFACE:
+            if "Percentage" in changed:
+                pct  = int(changed["Percentage"])
+                mac  = name_from_path(path)
+                name = self._get_name(bus, path)
+                self._client.push_event("bluetooth_battery", {"mac": mac, "name": name, "battery": pct})
+                logging.info("BT battery: %s (%s) %d%%", name, mac, pct)
 
     def run(self) -> None:
-        while True:
-            try:
-                self._watch()
-            except Exception as e:
-                logging.error("bluetooth watcher crashed: %s", e)
-            time.sleep(5)
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus = dbus.SystemBus()
 
-    def _watch(self) -> None:
-        proc = subprocess.Popen(
-            ["bluetoothctl"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            bufsize=1,
+        bus.add_signal_receiver(
+            lambda iface, changed, inv, path: self._on_properties_changed(iface, changed, inv, path, bus),
+            signal_name="PropertiesChanged",
+            dbus_interface=DBUS_PROPS_IFACE,
+            path_keyword="path",
         )
-        try:
-            for line in proc.stdout:
-                line = line.strip()
 
-                m = self._CONNECTED_RE.search(line)
-                if m:
-                    mac, state = m.group(1), m.group(2)
-                    name = self._resolve_name(mac)
-                    event = "bluetooth_connected" if state == "yes" else "bluetooth_disconnected"
-                    self._client.push_event(event, {"mac": mac, "name": name})
-                    continue
+        logging.info("bluetooth D-Bus watcher started")
+        GLib.MainLoop().run()
 
-                m = self._BATTERY_RE.search(line)
-                if m:
-                    mac, pct = m.group(1), int(m.group(2))
-                    name = self._resolve_name(mac)
-                    self._client.push_event("bluetooth_battery", {"mac": mac, "name": name, "battery": pct})
-        finally:
-            proc.terminate()
-            proc.wait()
+
+def name_from_path(path: str) -> str:
+    """Extracts and reformats a MAC address from a BlueZ D-Bus object path.
+    e.g. /org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF -> AA:BB:CC:DD:EE:FF
+    """
+    return path.split("/")[-1].replace("dev_", "").replace("_", ":")
 
 
 # ─── Stats poller ─────────────────────────────────────────────────────────────
