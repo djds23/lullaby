@@ -85,7 +85,6 @@ class BluetoothEventWatcher:
                 logging.info("BT battery: %s (%s) %d%%", name, mac, pct)
 
     def run(self) -> None:
-        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         bus = dbus.SystemBus()
 
         bus.add_signal_receiver(
@@ -159,6 +158,10 @@ class StatsPoller:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    # Must be called on the main thread before any threads are started
+    dbus.mainloop.glib.threads_init()
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     client = PostgRESTClient()
 
