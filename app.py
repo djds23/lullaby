@@ -14,7 +14,7 @@ import time
 from typing import Optional
 
 from config import POLL_INTERVAL
-from monitors import BluetoothMonitor, RaspotifyMonitor, SystemMonitor, run
+from monitors import BluetoothMonitor, RaspotifyMonitor, run
 from postgrest import PostgRESTClient
 
 
@@ -87,12 +87,12 @@ class BluetoothEventWatcher:
 # ─── Stats poller ─────────────────────────────────────────────────────────────
 
 class StatsPoller:
-    """Collects system and raspotify stats on an interval and pushes them as events."""
+    """Polls raspotify state and pushes events on change. System metrics are
+    handled by node_exporter and excluded here to avoid duplication."""
 
     def __init__(self, client: PostgRESTClient, interval: int = POLL_INTERVAL) -> None:
         self._client = client
         self._interval = interval
-        self._sys_mon = SystemMonitor()
         self._rsp_mon = RaspotifyMonitor()
         self._last_hash: Optional[str] = None
 
@@ -105,22 +105,15 @@ class StatsPoller:
             time.sleep(self._interval)
 
     def _poll(self) -> None:
-        sys_stats = self._sys_mon.get_stats()
         rsp_stats = self._rsp_mon.get_stats()
-        svc = rsp_stats.service
 
-        # Hash only stable state fields — noisy metrics (cpu, temp, memory)
-        # don't trigger a push on their own but ride along when state changes.
         state_signature = {
-            "system_throttled":             sys_stats.throttled,
-            "raspotify_active":             svc.active,
-            "raspotify_state":              svc.state,
-            "raspotify_restart_count":      svc.restart_count,
-            "raspotify_sink_state":         rsp_stats.sink_state,
-            "raspotify_currently_playing":  rsp_stats.currently_playing,
-            "raspotify_last_error":         rsp_stats.last_error,
-            "raspotify_spotify_reachable":  rsp_stats.spotify_reachable,
-            "raspotify_internet_reachable": rsp_stats.internet_reachable,
+            "sink_state":         rsp_stats.sink_state,
+            "currently_playing":  rsp_stats.currently_playing,
+            "last_error":         rsp_stats.last_error,
+            "last_exit_code":     rsp_stats.service.last_exit_code,
+            "spotify_reachable":  rsp_stats.spotify_reachable,
+            "internet_reachable": rsp_stats.internet_reachable,
         }
 
         digest = hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()
@@ -128,30 +121,7 @@ class StatsPoller:
             logging.debug("status unchanged, skipping push")
             return
 
-        payload = {
-            "system": {
-                "uptime_seconds":      sys_stats.uptime_seconds,
-                "cpu_percent":         sys_stats.cpu_percent,
-                "memory_available_mb": sys_stats.memory_available_mb,
-                "disk_available_gb":   sys_stats.disk_available_gb,
-                "cpu_temp_celsius":    sys_stats.cpu_temp_celsius,
-                "throttled":           sys_stats.throttled,
-            },
-            "raspotify": {
-                "uptime_seconds":     svc.uptime_seconds,
-                "active":             svc.active,
-                "state":              svc.state,
-                "restart_count":      svc.restart_count,
-                "last_exit_code":     svc.last_exit_code,
-                "sink_state":         rsp_stats.sink_state,
-                "currently_playing":  rsp_stats.currently_playing,
-                "last_error":         rsp_stats.last_error,
-                "spotify_reachable":  rsp_stats.spotify_reachable,
-                "internet_reachable": rsp_stats.internet_reachable,
-            },
-        }
-
-        self._client.push_event("status_snapshot", payload)
+        self._client.push_event("status_snapshot", state_signature)
         self._last_hash = digest
 
 
