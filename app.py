@@ -116,7 +116,17 @@ class StatsPoller:
         self._client = client
         self._interval = interval
         self._rsp_mon = RaspotifyMonitor()
-        self._last_hash: Optional[str] = None
+        self._last_hash: Optional[str] = self._current_hash()
+
+    def _current_hash(self) -> str:
+        rsp_stats = self._rsp_mon.get_stats()
+        state_signature = {
+            "sink_state":        rsp_stats.sink_state,
+            "currently_playing": rsp_stats.currently_playing,
+            "last_error":        rsp_stats.last_error,
+            "last_exit_code":    rsp_stats.service.last_exit_code,
+        }
+        return hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()
 
     def run(self) -> None:
         while True:
