@@ -21,20 +21,14 @@ from postgrest import PostgRESTClient
 
 # ─── Bluetooth event watcher ──────────────────────────────────────────────────
 
-BLUEZ_SERVICE        = "org.bluez"
-BLUEZ_DEVICE_IFACE   = "org.bluez.Device1"
-BLUEZ_BATTERY_IFACE  = "org.bluez.Battery1"
-DBUS_PROPS_IFACE     = "org.freedesktop.DBus.Properties"
-DBUS_OBJMANAGER_IFACE = "org.freedesktop.DBus.ObjectManager"
+BLUEZ_SERVICE       = "org.bluez"
+BLUEZ_DEVICE_IFACE  = "org.bluez.Device1"
+BLUEZ_BATTERY_IFACE = "org.bluez.Battery1"
+DBUS_PROPS_IFACE    = "org.freedesktop.DBus.Properties"
 
-# Audio UUID presence indicates this is an audio device
-AUDIO_UUIDS = {
-    "0000110b-0000-1000-8000-00805f9b34fb",  # Audio Sink
-    "0000110a-0000-1000-8000-00805f9b34fb",  # Audio Source
-    "00001108-0000-1000-8000-00805f9b34fb",  # Headset
-    "0000111e-0000-1000-8000-00805f9b34fb",  # Handsfree
-    "0000110e-0000-1000-8000-00805f9b34fb",  # A/V Remote Control
-}
+# Icon values BlueZ sets for audio devices — populated during scan,
+# before Connected fires, so safe to query on connection events.
+AUDIO_ICONS = {"audio-headset", "audio-card", "audio-input-microphone"}
 
 
 class BluetoothEventWatcher:
@@ -48,12 +42,15 @@ class BluetoothEventWatcher:
         self._client = client
 
     def _is_audio_device(self, bus: dbus.SystemBus, path: str) -> bool:
+        """Check Icon property, which is available before Connected fires.
+        UUIDs arrive after Connected so cannot be used here. Defaults to
+        True if the icon is absent so we don't silently drop events."""
         try:
             props = dbus.Interface(bus.get_object(BLUEZ_SERVICE, path), DBUS_PROPS_IFACE)
-            uuids = props.Get(BLUEZ_DEVICE_IFACE, "UUIDs")
-            return bool(AUDIO_UUIDS & {str(u).lower() for u in uuids})
+            icon = str(props.Get(BLUEZ_DEVICE_IFACE, "Icon"))
+            return icon in AUDIO_ICONS
         except Exception:
-            return False
+            return True
 
     def _get_name(self, bus: dbus.SystemBus, path: str) -> str:
         try:
