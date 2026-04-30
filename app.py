@@ -120,10 +120,9 @@ class StatsPoller:
     def _current_hash(self) -> str:
         rsp_stats = self._rsp_mon.get_stats()
         state_signature = {
-            "sink_state":        rsp_stats.sink_state,
-            "currently_playing": rsp_stats.currently_playing,
-            "last_error":        rsp_stats.last_error,
-            "last_exit_code":    rsp_stats.service.last_exit_code,
+            "sink_state":     rsp_stats.sink_state,
+            "last_error":     rsp_stats.last_error,
+            "last_exit_code": rsp_stats.service.last_exit_code,
         }
         return hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()
 
@@ -139,10 +138,9 @@ class StatsPoller:
         rsp_stats = self._rsp_mon.get_stats()
 
         state_signature = {
-            "sink_state":        rsp_stats.sink_state,
-            "currently_playing": rsp_stats.currently_playing,
-            "last_error":        rsp_stats.last_error,
-            "last_exit_code":    rsp_stats.service.last_exit_code,
+            "sink_state":     rsp_stats.sink_state,
+            "last_error":     rsp_stats.last_error,
+            "last_exit_code": rsp_stats.service.last_exit_code,
         }
 
         digest = hashlib.md5(json.dumps(state_signature, sort_keys=True).encode()).hexdigest()

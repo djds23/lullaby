@@ -1,6 +1,5 @@
 import re
 import shutil
-import socket
 import subprocess
 import time
 from typing import Optional
@@ -246,8 +245,8 @@ class ServiceMonitor:
 
 class RaspotifyMonitor:
     """
-    Checks Raspotify/librespot health: service state, PipeWire sink activity,
-    currently playing track, recent errors, and network reachability.
+    Checks Raspotify/librespot health: service state, PulseAudio sink
+    activity, and recent errors from the journal.
     """
 
     SINK_PATTERN = re.compile(r"bluez_output\.[0-9A-Fa-f_]+\.\d")
@@ -265,52 +264,22 @@ class RaspotifyMonitor:
                 return parts[-1] if parts else "unknown"
         return "unknown"
 
-    def _parse_journal(self) -> tuple[Optional[str], Optional[str]]:
-        """
-        Scrapes the last 100 librespot journal lines for the most recently
-        loaded track and the most recent error.
-        Returns (currently_playing, last_error).
-        """
+    def _get_last_error(self) -> Optional[str]:
+        """Returns the most recent ERROR line from the raspotify journal."""
         out, code = run("journalctl -u raspotify -n 100 --no-pager --output=short", timeout=8)
         if code != 0:
-            return None, None
-
-        currently_playing: Optional[str] = None
-        last_error: Optional[str] = None
-
+            return None
         for line in reversed(out.splitlines()):
-            if currently_playing is None:
-                match = re.search(r'Loading track "(.+?)"', line)
-                if match:
-                    currently_playing = match.group(1)
-
-            if last_error is None and "ERROR" in line:
+            if "ERROR" in line:
                 parts = line.split("librespot", 1)
-                last_error = parts[-1].strip().lstrip("[]0123456789: ") if parts else line
-
-            if currently_playing and last_error:
-                break
-
-        return currently_playing, last_error
-
-    def _check_host(self, host: str, port: int = 443) -> bool:
-        try:
-            socket.setdefaulttimeout(3)
-            socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
-            return True
-        except Exception:
-            return False
+                return parts[-1].strip().lstrip("[]0123456789: ") if parts else line
+        return None
 
     def get_stats(self) -> RaspotifyStats:
-        service = self._service_monitor.get_stats("raspotify")
-        currently_playing, last_error = self._parse_journal()
         return RaspotifyStats(
-            service=service,
+            service=self._service_monitor.get_stats("raspotify"),
             sink_state=self._get_sink_state(),
-            currently_playing=currently_playing,
-            last_error=last_error,
-            spotify_reachable=self._check_host("ap.spotify.com"),
-            internet_reachable=self._check_host("www.google.com"),
+            last_error=self._get_last_error(),
         )
 
 
@@ -363,20 +332,8 @@ def print_report() -> None:
         print(f"  Restarts     {svc.restart_count}  ⚠ service has crashed and recovered")
     sink_flag = "" if rsp.sink_state == "RUNNING" else f"  ({rsp.sink_state.lower()})"
     print(f"  Audio sink   {rsp.sink_state}{sink_flag}")
-    if rsp.currently_playing:
-        print(f"  Now playing  {rsp.currently_playing}")
     if rsp.last_error:
         print(f"  Last error   {rsp.last_error}")
-
-    print("\n── Network ──────────────────────────────")
-    internet = "✓ reachable" if rsp.internet_reachable else "✗ unreachable"
-    spotify  = "✓ reachable" if rsp.spotify_reachable  else "✗ unreachable"
-    print(f"  Internet     {internet}  (google.com)")
-    print(f"  Spotify      {spotify}  (ap.spotify.com)")
-    if not rsp.internet_reachable:
-        print("  ⚠ No internet — check your network connection")
-    elif not rsp.spotify_reachable:
-        print("  ⚠ Internet up but Spotify unreachable — possible block or outage")
     print()
 
 
